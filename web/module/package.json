@@ -1,0 +1,31 @@
+{
+  "name": "febrick",
+  "collaborators": [
+    "Radu Racariu <radu.racariu@gmail.com>"
+  ],
+  "description": "Brick Schema programatic APIs.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rracariu/febrick"
+  },
+  "files": [
+    "febrick_bg.wasm",
+    "febrick.js",
+    "febrick_bg.js",
+    "febrick.d.ts"
+  ],
+  "module": "febrick.js",
+  "types": "febrick.d.ts",
+  "sideEffects": [
+    "./febrick.js",
+    "./snippets/*"
+  ],
+  "keywords": [
+    "ontology",
+    "iot",
+    "brick",
+    "wasm"
+  ]
+}
