@@ -18,11 +18,11 @@ jobs:
         run: mv ./web/module/pkg/*.{js,ts,wasm} ./web/module && rm -rf ./web/module/pkg
       - name: build
         run: npm ci && npm run build
-        working-directory: ./web
+        working-directory: ./web/app
       - name: upload
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "./web/build/"
+          path: "./web/app/build/"
   deploy:
     needs: site
 
