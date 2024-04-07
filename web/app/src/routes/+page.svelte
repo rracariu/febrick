@@ -1,9 +1,10 @@
 <script lang="ts">
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
-	import Button from '$lib/components/ui/button/button.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import * as Tabs from '$lib/components/ui/tabs/index';
+	import { Badge } from '$lib/components/ui/badge/index.js';
 
 	import ScanSearch from 'lucide-svelte/icons/scan-search';
 
@@ -96,9 +97,25 @@
 								</Card.Title>
 
 								<Card.Description class="overflow-hidden truncate"
-									>{desc.definition}</Card.Description
+									><span title={desc.definition}>{desc.definition}</span></Card.Description
 								>
 							</Card.Header>
+							<Card.Content>
+								<div class="grid grid-cols-2 items-center gap-1">
+									{#each desc.properties as prop}
+										{#if prop.class}
+											<div class="justify-self-end border-b-2 border-b-slate-50">
+												<Badge>{prop.path}</Badge>
+											</div>
+											<div class="justify-self-start border-b-2 border-b-slate-50">
+												<Button variant="link" on:click={() => subClassOf(prop.class)}
+													>{prop.class}</Button
+												>
+											</div>
+										{/if}
+									{/each}
+								</div>
+							</Card.Content>
 						</Card.Root>
 					{/each}
 				{/if}
