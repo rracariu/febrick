@@ -10,7 +10,7 @@
 
 	import { onMount } from 'svelte';
 
-	import brickTtl from '@brick';
+	import brickTtl from '../../../../Brick.ttl?raw';
 	import { Brick } from 'febrick';
 
 	let brick: Brick | undefined;

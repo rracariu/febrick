@@ -1,26 +1,26 @@
 // Copyright (c) 2024, Radu Racariu.
 
-use std::rc::Rc;
-
 use anyhow::Result;
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use sophia::{graph::inmem::FastGraph, parser::turtle, term::Term};
+use sophia::{inmem::graph::FastGraph, turtle::parser::turtle};
+use sophia_api::prelude::{Any, TripleSource};
+use sophia_api::term::SimpleTerm;
 use sophia_api::{
     graph::Graph,
     ns::{rdf, rdfs, Namespace},
-    term::{matcher::ANY, TTerm},
-    triple::{stream::TripleSource, Triple},
+    term::Term,
+    triple::Triple,
 };
 
-lazy_static! {
-    pub static ref BRICK_NS: Namespace<&'static str> =
-        Namespace::new_unchecked("https://brickschema.org/schema/Brick#");
-    pub static ref SKOS_NS: Namespace<&'static str> =
-        Namespace::new_unchecked("http://www.w3.org/2004/02/skos/core#");
-    pub static ref SHACL_NS: Namespace<&'static str> =
-        Namespace::new_unchecked("http://www.w3.org/ns/shacl#");
-}
+use std::fmt::Debug;
+use std::sync::LazyLock;
+
+pub static BRICK_NS: LazyLock<Namespace<&'static str>> =
+    LazyLock::new(|| Namespace::new_unchecked("https://brickschema.org/schema/Brick#"));
+pub static SKOS_NS: LazyLock<Namespace<&'static str>> =
+    LazyLock::new(|| Namespace::new_unchecked("http://www.w3.org/2004/02/skos/core#"));
+pub static SHACL_NS: LazyLock<Namespace<&'static str>> =
+    LazyLock::new(|| Namespace::new_unchecked("http://www.w3.org/ns/shacl#"));
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct BrickClass {
@@ -92,7 +92,7 @@ impl Brick {
         let class = BRICK_NS.get(class)?;
 
         self.graph
-            .triples_matching(&ANY, &rdfs::subClassOf, &class)
+            .triples_matching(Any, [&rdfs::subClassOf], [&class])
             .map(|triple| triple.map(|tr| without_ns(tr.s())).map_err(Into::into))
             .collect()
     }
@@ -101,7 +101,7 @@ impl Brick {
         let class = BRICK_NS.get(class)?;
 
         self.graph
-            .triples_matching(&class, &rdfs::subClassOf, &ANY)
+            .triples_matching([&class], [&rdfs::subClassOf], Any)
             .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
             .collect()
     }
@@ -110,7 +110,7 @@ impl Brick {
         let class = BRICK_NS.get(class)?;
 
         self.graph
-            .triples_matching(&class, &BRICK_NS.get("hasAssociatedTag")?, &ANY)
+            .triples_matching([&class], [&BRICK_NS.get("hasAssociatedTag")?], Any)
             .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
             .collect()
     }
@@ -120,15 +120,14 @@ impl Brick {
         let prop = SHACL_NS.get("property")?;
 
         let mut props = Vec::<BrickProperty>::new();
-        let mut cur_prop = String::default();
 
         for prop_term in self
             .graph
-            .triples_matching(&class, &prop, &ANY)
+            .triples_matching([&class], [&prop], Any)
             .map(|triple| triple.map(|el| el.o().clone()))
         {
             let prop_term = prop_term?;
-            self.collect_props(&prop_term, &mut cur_prop, &mut props)?;
+            self.collect_props(prop_term, &mut props)?;
         }
 
         Ok(props)
@@ -136,23 +135,24 @@ impl Brick {
 
     fn collect_props(
         &self,
-        prop_term: &dyn TTerm,
-        cur_prop: &mut String,
+        prop_term: SimpleTerm,
         props: &mut Vec<BrickProperty>,
     ) -> Result<(), anyhow::Error> {
-        for triple in self.graph.triples_matching(prop_term, &ANY, &ANY) {
+        let mut cur_prop = String::default();
+
+        for triple in self.graph.triples_matching([prop_term.clone()], Any, Any) {
             let triple = triple?;
 
-            if triple.s().to_string() != *cur_prop {
+            if triple.s().bnode_id().is_some_and(|val| **val != cur_prop) {
                 props.push(BrickProperty::default());
-                *cur_prop = prop_term.to_string();
+                cur_prop = prop_term.bnode_id().unwrap().to_string();
             }
 
             if let Some(prop) = props.last_mut() {
-                let val = triple.p().value().to_string();
+                let val = triple.p().iri().unwrap();
 
                 if val.ends_with("#message") {
-                    prop.definition = triple.o().value().to_string();
+                    prop.definition = triple.o().lexical_form().unwrap().to_string();
                 } else if val.ends_with("#class") {
                     prop.class = without_ns(triple.o());
                 } else if val.ends_with("#path") {
@@ -181,19 +181,35 @@ impl Brick {
 
         let label = self
             .graph
-            .triples_matching(&class, &rdfs::label, &ANY)
-            .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
+            .triples_matching([&class], [&rdfs::label], Any)
+            .map(|triple| {
+                triple
+                    .map(|tr| {
+                        tr.o()
+                            .lexical_form()
+                            .map_or(String::new(), |v| v.to_string())
+                    })
+                    .map_err(Into::into)
+            })
             .collect::<Result<String>>()?;
 
         let definition = self
             .graph
-            .triples_matching(&class, &SKOS_NS.get("definition")?, &ANY)
-            .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
+            .triples_matching([&class], [&SKOS_NS.get("definition")?], Any)
+            .map(|triple| {
+                triple
+                    .map(|tr| {
+                        tr.o()
+                            .lexical_form()
+                            .map_or(String::new(), |v| v.to_string())
+                    })
+                    .map_err(Into::into)
+            })
             .collect::<Result<String>>()?;
 
         let types = self
             .graph
-            .triples_matching(&class, &rdf::type_, &ANY)
+            .triples_matching([&class], [&rdf::type_], Any)
             .map(|triple| triple.map(|tr| only_prefix(tr.o())).map_err(Into::into))
             .collect::<Result<Vec<String>>>()?;
 
@@ -213,45 +229,51 @@ impl Brick {
         })
     }
 
-    fn get_not_constraint(&self, or_term: Term<Rc<str>>) -> Result<LogicalConstraint> {
+    fn get_not_constraint(&self, or_term: SimpleTerm) -> Result<LogicalConstraint> {
         let props = self.collect_prop_list(or_term)?;
         Ok(LogicalConstraint::Not(props))
     }
 
-    fn get_and_constraint(&self, or_term: Term<Rc<str>>) -> Result<LogicalConstraint> {
+    fn get_and_constraint(&self, or_term: SimpleTerm) -> Result<LogicalConstraint> {
         let props = self.collect_prop_list(or_term)?;
         Ok(LogicalConstraint::And(props))
     }
 
-    fn get_or_constraint(&self, or_term: Term<Rc<str>>) -> Result<LogicalConstraint> {
+    fn get_or_constraint(&self, or_term: SimpleTerm) -> Result<LogicalConstraint> {
         let props = self.collect_prop_list(or_term)?;
         Ok(LogicalConstraint::Or(props))
     }
 
-    fn get_xone_constraint(&self, or_term: Term<Rc<str>>) -> Result<LogicalConstraint> {
+    fn get_xone_constraint(&self, or_term: SimpleTerm) -> Result<LogicalConstraint> {
         let props = self.collect_prop_list(or_term)?;
         Ok(LogicalConstraint::XOne(props))
     }
 
     fn collect_prop_list(
         &self,
-        mut list_term: Term<Rc<str>>,
+        mut list_term: SimpleTerm,
     ) -> Result<Vec<BrickProperty>, anyhow::Error> {
         let mut props = Vec::<BrickProperty>::new();
         'outer: loop {
-            for list_triple in self.graph.triples_matching(&list_term.clone(), &ANY, &ANY) {
+            for list_triple in self.graph.triples_matching([&list_term.clone()], Any, Any) {
                 let list_triple = list_triple?;
 
-                if list_triple.p().value().to_string().ends_with("#rest") {
-                    list_term = list_triple.o().clone();
+                if list_triple
+                    .p()
+                    .iri()
+                    .is_some_and(|iri| iri.ends_with("#rest"))
+                {
+                    list_term = list_triple.o().to_owned();
                     continue 'outer;
                 }
-                if list_triple.p().value().to_string().ends_with("#first") {
-                    let mut cur_prop = String::default();
-
-                    for prop_triple in self.graph.triples_matching(list_triple.o(), &ANY, &ANY) {
+                if list_triple
+                    .p()
+                    .iri()
+                    .is_some_and(|iri| iri.ends_with("#first"))
+                {
+                    for prop_triple in self.graph.triples_matching([list_triple.o()], Any, Any) {
                         let prop_triple = prop_triple?;
-                        self.collect_props(prop_triple.s(), &mut cur_prop, &mut props)?;
+                        self.collect_props(prop_triple.s().to_owned(), &mut props)?;
                     }
                 } else {
                     break 'outer;
@@ -263,13 +285,13 @@ impl Brick {
     }
 }
 
-fn without_ns(term: &dyn TTerm) -> String {
-    let val = term.value();
+fn without_ns(term: &SimpleTerm) -> String {
+    let val = term.iri().unwrap();
     val[val.rfind('#').map(|v| v + 1).unwrap_or_default()..].to_string()
 }
 
-fn only_prefix(term: &dyn TTerm) -> String {
-    let val = term.value();
+fn only_prefix(term: &SimpleTerm) -> String {
+    let val = term.iri().unwrap();
 
     let idx = val.rfind('#').map(|v| v + 1).unwrap_or_default();
     let begin = val[..idx].rfind('/').map(|v| v + 1).unwrap_or(idx);
@@ -339,14 +361,14 @@ mod test {
         let desc = brick.class_desc("Setpoint").unwrap();
 
         assert_eq!(desc.name, "Setpoint");
-        assert_eq!(desc.label, "Setpoint");
+        assert_eq!(desc.tags, ["Point", "Setpoint"]);
         assert_eq!(
             desc.definition,
             "A Setpoint is an input value at which the desired property is set"
         );
         assert_eq!(
             desc.types,
-            vec!["owl#Class".to_string(), "shacl#NodeShape".into()]
+            ["shacl#NodeShape".into(), "owl#Class".to_string()]
         );
         assert_eq!(desc.super_classes, vec!["Point".to_string()]);
         assert_eq!(desc.tags, vec!["Point".to_string(), "Setpoint".to_string()]);
@@ -361,7 +383,12 @@ mod test {
 
         assert!(props
             .iter()
-            .any(|p| p.path == "isPartOf" && p.class == "Location"));
+            .any(|p| p.path == "hasPoint" && p.class == "Point"));
+
+        assert!(props.iter().any(|p| p.path == "isPartOf"
+            && p.logical_constraints.iter().any(
+                |prop| matches!(prop, LogicalConstraint::Or(el) if el[0].class == "Location")
+            )));
 
         let props = brick.class_properties("Site").unwrap();
         assert!(props.len() > 0);

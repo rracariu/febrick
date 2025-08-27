@@ -1,5 +1,6 @@
 {
   "name": "febrick",
+  "type": "module",
   "collaborators": [
     "Radu Racariu <radu.racariu@gmail.com>"
   ],
@@ -16,7 +17,7 @@
     "febrick_bg.js",
     "febrick.d.ts"
   ],
-  "module": "febrick.js",
+  "main": "febrick.js",
   "types": "febrick.d.ts",
   "sideEffects": [
     "./febrick.js",
