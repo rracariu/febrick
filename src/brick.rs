@@ -11,9 +11,10 @@ use sophia_api::{
     term::Term,
     triple::Triple,
 };
-
 use std::fmt::Debug;
 use std::sync::LazyLock;
+
+use crate::property::{BrickProperty, LogicalConstraint};
 
 pub static BRICK_NS: LazyLock<Namespace<&'static str>> =
     LazyLock::new(|| Namespace::new_unchecked("https://brickschema.org/schema/Brick#"));
@@ -22,6 +23,7 @@ pub static SKOS_NS: LazyLock<Namespace<&'static str>> =
 pub static SHACL_NS: LazyLock<Namespace<&'static str>> =
     LazyLock::new(|| Namespace::new_unchecked("http://www.w3.org/ns/shacl#"));
 
+#[cfg_attr(target_arch = "wasm32", derive(tsify::Tsify))]
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct BrickClass {
     pub name: String,
@@ -31,48 +33,6 @@ pub struct BrickClass {
     pub super_classes: Vec<String>,
     pub tags: Vec<String>,
     pub properties: Vec<BrickProperty>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum PropertyPairConstraint {
-    Equal(String),
-    Disjoint(String),
-    LessThan(String),
-    LessThanOrEqual(String),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LogicalConstraint {
-    Not(Vec<BrickProperty>),
-    And(Vec<BrickProperty>),
-    Or(Vec<BrickProperty>),
-    XOne(Vec<BrickProperty>),
-}
-
-#[derive(Default, Debug, Serialize, Deserialize)]
-pub struct BrickProperty {
-    pub path: String,
-    pub definition: String,
-    pub class: String,
-    pub subclass_of: Vec<String>,
-
-    pub min_count: Option<u32>,
-    pub max_count: Option<u32>,
-    pub min_length: Option<u32>,
-    pub max_length: Option<u32>,
-
-    pub min_inclusive: Option<f64>,
-    pub max_inclusive: Option<f64>,
-    pub min_exclusive: Option<f64>,
-    pub max_exclusive: Option<f64>,
-
-    pub pattern: Option<String>,
-    pub datatype: Option<String>,
-
-    pub constraints: Vec<PropertyPairConstraint>,
-    pub logical_constraints: Vec<LogicalConstraint>,
-    pub one_of: Vec<String>,
-    pub has_value_of: String,
 }
 
 pub struct Brick {
@@ -379,7 +339,7 @@ mod test {
         let brick = ensure_brick();
 
         let props = brick.class_properties("Location").unwrap();
-        assert!(props.len() > 0);
+        assert!(!props.is_empty());
 
         assert!(props
             .iter()
@@ -391,10 +351,10 @@ mod test {
             )));
 
         let props = brick.class_properties("Site").unwrap();
-        assert!(props.len() > 0);
+        assert!(!props.is_empty());
 
         assert!(props.iter().any(|p| p.path == "hasPart"
-            && p.logical_constraints.len() > 0
+            && !p.logical_constraints.is_empty()
             && matches!(&p.logical_constraints[0], LogicalConstraint::Or(el) if el[0].class == "Building")));
     }
 }

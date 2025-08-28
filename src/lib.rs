@@ -5,6 +5,7 @@
 //!
 
 pub mod brick;
+pub mod property;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;

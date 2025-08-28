@@ -56,7 +56,7 @@ impl Brick {
     }
 
     /// For the given class, return its core definition.
-    #[wasm_bindgen(js_name = classDescription)]
+    #[wasm_bindgen(js_name = classDescription, unchecked_return_type = "BrickClass")]
     pub fn class_description(&self, class: &str) -> Result<JsValue, String> {
         self.brick
             .class_desc(class)
@@ -65,7 +65,7 @@ impl Brick {
     }
 
     /// For the given class, return all of its properties names.
-    #[wasm_bindgen(js_name = classProperties)]
+    #[wasm_bindgen(js_name = classProperties, unchecked_return_type = "BrickProperty[]")]
     pub fn class_properties(&self, class: &str) -> Result<JsValue, String> {
         self.brick
             .class_properties(class)
