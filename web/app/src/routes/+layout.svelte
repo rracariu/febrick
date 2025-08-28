@@ -1,6 +1,6 @@
 <script>
 	import * as Tabs from '$lib/components/ui/tabs/index';
-	import '../app.pcss';
+	import '../app.css';
 </script>
 
 <div class="hidden flex-col md:flex">

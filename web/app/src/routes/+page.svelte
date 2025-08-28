@@ -3,26 +3,29 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index';
 	import Input from '$lib/components/ui/input/input.svelte';
+	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 
-	import ScanSearch from 'lucide-svelte/icons/scan-search';
+	import { ArrowUpRight } from '@lucide/svelte';
 
 	import { onMount } from 'svelte';
 
-	import brickTtl from '../../../../Brick.ttl?raw';
+	import Badge from '$lib/components/ui/badge/badge.svelte';
 	import { Brick } from 'febrick';
-
-	let brick: Brick | undefined;
+	import brickTtl from '../../../../Brick.ttl?raw';
 
 	const rootClass = 'Entity';
-	let loadedClassNames: string[] = [];
-	$: filteredClassNames = search.length
-		? loadedClassNames.filter((entity) => entity.toLowerCase().startsWith(search.toLowerCase()))
-		: loadedClassNames;
 
-	let path: string[] = [rootClass];
-	let search: string = '';
+	let brick: Brick | undefined = $state(undefined);
+	let path: string[] = $state([rootClass]);
+	let search: string = $state('');
+	let loadedClassNames: string[] = $state([]);
+
+	const filteredClassNames = $derived.by(() =>
+		search.length
+			? loadedClassNames.filter((entity) => entity.toLowerCase().startsWith(search.toLowerCase()))
+			: loadedClassNames
+	);
 
 	onMount(() => {
 		brick = new Brick(brickTtl);
@@ -47,6 +50,17 @@
 		path = [...path, name];
 		subClassOf(name);
 	}
+
+	function constraints(prop: any): string[] {
+		if (prop.logical_constraints.length > 0) {
+			if (!prop.logical_constraints[0]['Or']) {
+				return [];
+			}
+			return prop.logical_constraints[0]['Or'].map((c: any) => c.class);
+		} else {
+			return [];
+		}
+	}
 </script>
 
 <Tabs.Content value="classes" class="space-y-4">
@@ -60,10 +74,7 @@
 								<Breadcrumb.Separator />
 								{#each path as part, index}
 									<Breadcrumb.Item
-										><Button
-											class="text-primary p-0 text-current"
-											variant="link"
-											on:click={() => navigateToLevel(index)}>{part}</Button
+										><Button variant="link" onclick={() => navigateToLevel(index)}>{part}</Button
 										></Breadcrumb.Item
 									>
 									{#if index < path.length - 1}
@@ -87,13 +98,16 @@
 						<Card.Root class="m-1"
 							><Card.Header>
 								<Card.Title>
-									<Button
-										class="text-primary m-0 gap-1 p-0 text-current"
-										variant="link"
-										on:click={() => {
-											navigateToClass(className);
-										}}><ScanSearch /> {className}</Button
-									>
+									<div class="flex flex-row items-center justify-between">
+										{className}
+										<Button
+											variant="link"
+											onclick={() => {
+												navigateToClass(className);
+											}}
+											><ArrowUpRight />
+										</Button>
+									</div>
 								</Card.Title>
 
 								<Card.Description class="overflow-hidden truncate"
@@ -101,20 +115,51 @@
 								>
 							</Card.Header>
 							<Card.Content>
-								<div class="grid grid-cols-2 items-center gap-1">
-									{#each desc.properties as prop}
-										{#if prop.class}
-											<div class="justify-self-end border-b-2 border-b-slate-50">
-												<Badge>{prop.path}</Badge>
-											</div>
-											<div class="justify-self-start border-b-2 border-b-slate-50">
-												<Button variant="link" on:click={() => subClassOf(prop.class)}
-													>{prop.class}</Button
-												>
-											</div>
+								<Table.Root>
+									<Table.Header>
+										<Table.Row>
+											<Table.Head>Path</Table.Head>
+											<Table.Head>Class</Table.Head>
+										</Table.Row>
+									</Table.Header>
+									<Table.Body>
+										{#if desc.properties.length === 0}
+											<Table.Row>
+												<Table.Cell class="text-center">No properties</Table.Cell>
+											</Table.Row>
+										{:else}
+											{#each desc.properties as prop}
+												<Table.Row>
+													<Table.Cell
+														class="justify-self-end border-b-2 border-b-slate-50 align-text-top"
+													>
+														{prop.path}
+													</Table.Cell>
+													<Table.Cell
+														class="justify-self-start border-b-2 border-b-slate-50 align-text-top"
+													>
+														{#if prop.class}
+															<Button variant="link" onclick={() => navigateToClass(prop.class)}
+																>{prop.class}</Button
+															>
+														{:else}
+															{#each constraints(prop) as c, i}
+																<div class="m-1 flex content-center items-center">
+																	{#if i === 0}
+																		<Badge variant="outline" class="mr-1">One of:</Badge>
+																	{/if}
+																	<Button variant="link" onclick={() => navigateToClass(c)}
+																		>{c}</Button
+																	>
+																</div>
+															{/each}
+														{/if}
+													</Table.Cell>
+												</Table.Row>
+											{/each}
 										{/if}
-									{/each}
-								</div>
+									</Table.Body>
+								</Table.Root>
 							</Card.Content>
 						</Card.Root>
 					{/each}
