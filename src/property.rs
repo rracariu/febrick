@@ -23,6 +23,7 @@ pub enum LogicalConstraint {
 
 #[cfg_attr(target_arch = "wasm32", derive(tsify::Tsify))]
 #[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BrickProperty {
     pub path: String,
     pub definition: String,

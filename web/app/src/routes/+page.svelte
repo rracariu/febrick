@@ -11,7 +11,7 @@
 	import { onMount } from 'svelte';
 
 	import Badge from '$lib/components/ui/badge/badge.svelte';
-	import { Brick } from 'febrick';
+	import { Brick, type BrickProperty } from 'febrick';
 	import brickTtl from '../../../../Brick.ttl?raw';
 
 	const rootClass = 'Entity';
@@ -31,7 +31,7 @@
 		brick = new Brick(brickTtl);
 		subClassOf(rootClass);
 
-		console.log('Page mounted');
+		console.log('Ontology loaded');
 	});
 
 	function subClassOf(name: string): void {
@@ -51,12 +51,14 @@
 		subClassOf(name);
 	}
 
-	function constraints(prop: any): string[] {
-		if (prop.logical_constraints.length > 0) {
-			if (!prop.logical_constraints[0]['Or']) {
+	function constraints(prop: BrickProperty): string[] {
+		if (prop.logicalConstraints.length) {
+			const constraint = prop.logicalConstraints[0];
+			if (!('Or' in constraint)) {
 				return [];
 			}
-			return prop.logical_constraints[0]['Or'].map((c: any) => c.class);
+
+			return constraint.Or.map((prop) => prop.class);
 		} else {
 			return [];
 		}

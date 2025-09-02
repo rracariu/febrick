@@ -25,6 +25,7 @@ pub static SHACL_NS: LazyLock<Namespace<&'static str>> =
 
 #[cfg_attr(target_arch = "wasm32", derive(tsify::Tsify))]
 #[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BrickClass {
     pub name: String,
     pub label: String,
