@@ -14,16 +14,16 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
           node-version: latest
 
       - name: wasm-build
-        run: npm install -g wasm-pack && wasm-pack build --out-dir ./web/module/pkg
+        run: bun install --global wasm-pack && wasm-pack build --out-dir ./web/module/pkg
       - name: prepare
         run: mv ./web/module/pkg/*.{js,ts,wasm} ./web/module && rm -rf ./web/module/pkg
       - name: build
-        run: npm ci && npm run build
+        run: bun install --frozen-lockfile && bun run build
         working-directory: ./web/app
       - name: upload
         uses: actions/upload-pages-artifact@v3
