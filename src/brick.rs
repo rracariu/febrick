@@ -1,27 +1,27 @@
 // Copyright (c) 2024, Radu Racariu.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use sophia::{inmem::graph::FastGraph, turtle::parser::turtle};
-use sophia_api::prelude::{Any, TripleSource};
+
+use sophia::inmem::graph::FastGraph;
 use sophia_api::term::SimpleTerm;
 use sophia_api::{
-    graph::Graph,
-    ns::{rdf, rdfs, Namespace},
+    graph::{Graph, MutableGraph},
+    ns::{rdf, rdfs},
+    prelude::TripleParser,
+    term::matcher::Any,
     term::Term,
     triple::Triple,
 };
+
+use rio_api::parser::TriplesParser;
+use sophia_rio::model::Trusted;
+use sophia_turtle::parser::turtle::TurtleParser;
+
 use std::fmt::Debug;
-use std::sync::LazyLock;
 
+use crate::namespaces::{get_ns, init_ns_from_prefixes};
 use crate::property::{BrickProperty, LogicalConstraint};
-
-pub static BRICK_NS: LazyLock<Namespace<&'static str>> =
-    LazyLock::new(|| Namespace::new_unchecked("https://brickschema.org/schema/Brick#"));
-pub static SKOS_NS: LazyLock<Namespace<&'static str>> =
-    LazyLock::new(|| Namespace::new_unchecked("http://www.w3.org/2004/02/skos/core#"));
-pub static SHACL_NS: LazyLock<Namespace<&'static str>> =
-    LazyLock::new(|| Namespace::new_unchecked("http://www.w3.org/ns/shacl#"));
 
 #[cfg_attr(target_arch = "wasm32", derive(tsify::Tsify))]
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -42,15 +42,22 @@ pub struct Brick {
 
 impl Brick {
     pub fn new(input: &str) -> Result<Self> {
-        let parser = turtle::parse_str(input);
+        let mut graph = FastGraph::new();
 
-        let graph: FastGraph = parser.collect_triples()?;
+        let mut parser = TurtleParser { base: None }.parse_str(input).0;
+
+        parser.parse_all(&mut |triple| {
+            graph.insert_triple(Trusted(triple))?;
+            anyhow::Ok(())
+        })?;
+
+        init_ns_from_prefixes(parser.prefixes());
 
         Ok(Brick { graph })
     }
 
     pub fn sub_class_of(&self, class: &str) -> Result<Vec<String>> {
-        let class = BRICK_NS.get(class)?;
+        let class = get_ns("brick")?.get(class)?;
 
         self.graph
             .triples_matching(Any, [&rdfs::subClassOf], [&class])
@@ -59,7 +66,7 @@ impl Brick {
     }
 
     pub fn super_class_of(&self, class: &str) -> Result<Vec<String>> {
-        let class = BRICK_NS.get(class)?;
+        let class = get_ns("brick")?.get(class)?;
 
         self.graph
             .triples_matching([&class], [&rdfs::subClassOf], Any)
@@ -68,17 +75,17 @@ impl Brick {
     }
 
     pub fn class_tags(&self, class: &str) -> Result<Vec<String>> {
-        let class = BRICK_NS.get(class)?;
+        let class = get_ns("brick")?.get(class)?;
 
         self.graph
-            .triples_matching([&class], [&BRICK_NS.get("hasAssociatedTag")?], Any)
+            .triples_matching([&class], [&get_ns("brick")?.get("hasAssociatedTag")?], Any)
             .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
             .collect()
     }
 
     pub fn class_properties(&self, class_name: &str) -> Result<Vec<BrickProperty>> {
-        let class = BRICK_NS.get(class_name)?;
-        let prop = SHACL_NS.get("property")?;
+        let class = get_ns("brick")?.get(class_name)?;
+        let prop = get_ns("shacl")?.get("property")?;
 
         let mut props = Vec::<BrickProperty>::new();
 
@@ -110,24 +117,27 @@ impl Brick {
             }
 
             if let Some(prop) = props.last_mut() {
-                let val = triple.p().iri().unwrap();
+                let val = triple.p().iri().ok_or_else(|| anyhow!("Expecting IRI"))?;
+                let base = val.as_base();
+                let fragment = base.fragment().ok_or_else(|| anyhow!("Missing fragment"))?;
+                let path = base.path().split('/').last().unwrap_or_default();
 
-                if val.ends_with("#message") {
+                if fragment == "message" {
                     prop.definition = triple.o().lexical_form().unwrap().to_string();
-                } else if val.ends_with("#class") {
+                } else if fragment == "class" {
                     prop.class = without_ns(triple.o());
-                } else if val.ends_with("#path") {
+                } else if fragment == "path" {
                     prop.path = without_ns(triple.o());
-                } else if val.ends_with("#not") {
+                } else if fragment == "not" {
                     prop.logical_constraints
                         .push(self.get_not_constraint(triple.o().clone())?);
-                } else if val.ends_with("#and") {
+                } else if fragment == "and" {
                     prop.logical_constraints
                         .push(self.get_and_constraint(triple.o().clone())?);
-                } else if val.ends_with("#or") {
+                } else if fragment == "or" {
                     prop.logical_constraints
                         .push(self.get_or_constraint(triple.o().clone())?);
-                } else if val.ends_with("#xone") {
+                } else if fragment == "xone" {
                     prop.logical_constraints
                         .push(self.get_xone_constraint(triple.o().clone())?);
                 }
@@ -138,7 +148,7 @@ impl Brick {
     }
 
     pub fn class_desc(&self, class_name: &str) -> Result<BrickClass> {
-        let class = BRICK_NS.get(class_name)?;
+        let class = get_ns("brick")?.get(class_name)?;
 
         let label = self
             .graph
@@ -156,7 +166,7 @@ impl Brick {
 
         let definition = self
             .graph
-            .triples_matching([&class], [&SKOS_NS.get("definition")?], Any)
+            .triples_matching([&class], [&get_ns("skos")?.get("definition")?], Any)
             .map(|triple| {
                 triple
                     .map(|tr| {
