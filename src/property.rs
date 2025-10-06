@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
+use crate::curie::Curie;
+
 #[cfg_attr(target_arch = "wasm32", derive(tsify::Tsify))]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum PropertyPairConstraint {
@@ -27,8 +29,8 @@ pub enum LogicalConstraint {
 pub struct BrickProperty {
     pub path: String,
     pub definition: String,
-    pub class: String,
-    pub subclass_of: Vec<String>,
+    pub class: Curie,
+    pub subclass_of: Vec<Curie>,
 
     pub min_count: Option<u32>,
     pub max_count: Option<u32>,

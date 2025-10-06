@@ -6,6 +6,7 @@
 
 pub mod brick;
 pub mod curie;
+pub mod entity;
 pub mod namespaces;
 pub mod property;
 

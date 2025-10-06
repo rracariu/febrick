@@ -1,32 +1,35 @@
-use std::{collections::HashMap, sync::OnceLock};
+use std::collections::HashMap;
 
-use anyhow::Result;
 use sophia_api::ns::Namespace;
 
-/// Global static map of namespaces initialized once.
-/// This is initialized from the prefixes provided when loading the Brick schema.
-pub static NS: OnceLock<HashMap<String, Namespace<String>>> = OnceLock::new();
-
-/// Get a namespace by its prefix.
-pub fn get_ns(ns: &str) -> Result<&Namespace<String>> {
-    NS.get()
-        .and_then(|map| map.get(ns))
-        .ok_or_else(|| anyhow::anyhow!("Namespace not found: {}", ns))
+/// A mapping between prefixes and namespaces.
+#[derive(Debug, Clone)]
+pub struct PrefixNamespaceMap {
+    prefix_to_ns: HashMap<String, Namespace<String>>,
+    ns_to_prefix: HashMap<String, String>,
 }
 
-pub(crate) fn init_ns_from_prefixes(prefixes: &HashMap<String, String>) {
-    NS.get_or_init(|| {
-        let mut map = HashMap::new();
-        for (k, v) in prefixes {
-            map.insert(k.clone(), Namespace::new_unchecked(v.clone()));
+impl PrefixNamespaceMap {
+    pub fn new(prefix_map: &HashMap<String, String>) -> Self {
+        let mut prefix_to_ns = HashMap::new();
+        let mut ns_to_prefix = HashMap::new();
+
+        for (prefix, ns) in prefix_map {
+            prefix_to_ns.insert(prefix.clone(), Namespace::new_unchecked(ns.clone()));
+            ns_to_prefix.insert(ns.clone(), prefix.clone());
         }
 
-        // Ensure some common namespaces are always present.
-        map.insert(
-            "shacl".into(),
-            Namespace::new_unchecked("http://www.w3.org/ns/shacl#".to_string()),
-        );
+        Self {
+            prefix_to_ns,
+            ns_to_prefix,
+        }
+    }
 
-        map
-    });
+    pub fn get_ns(&self, prefix: &str) -> Option<&Namespace<String>> {
+        self.prefix_to_ns.get(prefix)
+    }
+
+    pub fn get_prefix(&self, ns: &str) -> Option<&String> {
+        self.ns_to_prefix.get(ns)
+    }
 }

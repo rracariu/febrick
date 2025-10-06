@@ -11,19 +11,21 @@
 	import { onMount } from 'svelte';
 
 	import Badge from '$lib/components/ui/badge/badge.svelte';
-	import { Brick, type BrickProperty } from 'febrick';
+	import { Brick, type BrickProperty, type Curie } from 'febrick';
 	import brickTtl from '../../../../Brick.ttl?raw';
 
-	const rootClass = 'Entity';
+	const rootClass = { prefix: 'brick', localName: 'Entity' } as Curie;
 
 	let brick: Brick | undefined = $state(undefined);
-	let path: string[] = $state([rootClass]);
+	let path: Curie[] = $state([rootClass]);
 	let search: string = $state('');
-	let loadedClassNames: string[] = $state([]);
+	let loadedClassNames: Curie[] = $state([]);
 
 	const filteredClassNames = $derived.by(() =>
 		search.length
-			? loadedClassNames.filter((entity) => entity.toLowerCase().startsWith(search.toLowerCase()))
+			? loadedClassNames.filter((entity) =>
+					entity.localName.toLowerCase().startsWith(search.toLowerCase())
+				)
 			: loadedClassNames
 	);
 
@@ -34,8 +36,8 @@
 		console.log('Ontology loaded');
 	});
 
-	function subClassOf(name: string): void {
-		loadedClassNames = brick?.subClassOf(name) ?? [];
+	function subClassOf(uri: Curie): void {
+		loadedClassNames = brick?.subClassOf(uri) ?? [];
 	}
 
 	function navigateToLevel(index: number): void {
@@ -45,13 +47,13 @@
 		subClassOf(part);
 	}
 
-	function navigateToClass(name: string): void {
+	function navigateToClass(uri: Curie): void {
 		search = '';
-		path = [...path, name];
-		subClassOf(name);
+		path = [...path, uri];
+		subClassOf(uri);
 	}
 
-	function constraints(prop: BrickProperty): string[] {
+	function constraints(prop: BrickProperty): Curie[] {
 		if (prop.logicalConstraints.length) {
 			const constraint = prop.logicalConstraints[0];
 			if (!('Or' in constraint)) {
@@ -76,7 +78,8 @@
 								<Breadcrumb.Separator />
 								{#each path as part, index}
 									<Breadcrumb.Item
-										><Button variant="link" onclick={() => navigateToLevel(index)}>{part}</Button
+										><Button variant="link" onclick={() => navigateToLevel(index)}
+											>{part.prefix}: {part.localName}</Button
 										></Breadcrumb.Item
 									>
 									{#if index < path.length - 1}
@@ -101,7 +104,7 @@
 							><Card.Header>
 								<Card.Title>
 									<div class="flex flex-row items-center justify-between">
-										{className}
+										{className.prefix}:{className.localName}
 										<Button
 											variant="link"
 											onclick={() => {
@@ -140,9 +143,9 @@
 													<Table.Cell
 														class="justify-self-start border-b-2 border-b-slate-50 align-text-top"
 													>
-														{#if prop.class}
+														{#if prop.class.localName}
 															<Button variant="link" onclick={() => navigateToClass(prop.class)}
-																>{prop.class}</Button
+																>{prop.class.prefix}:{prop.class.localName}</Button
 															>
 														{:else}
 															{#each constraints(prop) as c, i}
@@ -151,7 +154,7 @@
 																		<Badge variant="outline" class="mr-1">One of:</Badge>
 																	{/if}
 																	<Button variant="link" onclick={() => navigateToClass(c)}
-																		>{c}</Button
+																		>{c.prefix}:{c.localName}</Button
 																	>
 																</div>
 															{/each}

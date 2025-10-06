@@ -1,9 +1,9 @@
 // Copyright (c) 2024, Radu Racariu.
 
 use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
 
 use sophia::inmem::graph::FastGraph;
+use sophia_api::ns::Namespace;
 use sophia_api::term::SimpleTerm;
 use sophia_api::{
     graph::{Graph, MutableGraph},
@@ -18,26 +18,14 @@ use rio_api::parser::TriplesParser;
 use sophia_rio::model::Trusted;
 use sophia_turtle::parser::turtle::TurtleParser;
 
-use std::fmt::Debug;
-
-use crate::namespaces::{get_ns, init_ns_from_prefixes};
+use crate::curie::Curie;
+use crate::entity::BrickEntity;
+use crate::namespaces::PrefixNamespaceMap;
 use crate::property::{BrickProperty, LogicalConstraint};
-
-#[cfg_attr(target_arch = "wasm32", derive(tsify::Tsify))]
-#[derive(Default, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrickClass {
-    pub name: String,
-    pub label: String,
-    pub definition: String,
-    pub types: Vec<String>,
-    pub super_classes: Vec<String>,
-    pub tags: Vec<String>,
-    pub properties: Vec<BrickProperty>,
-}
 
 pub struct Brick {
     graph: FastGraph,
+    prefixes: PrefixNamespaceMap,
 }
 
 impl Brick {
@@ -51,41 +39,45 @@ impl Brick {
             anyhow::Ok(())
         })?;
 
-        init_ns_from_prefixes(parser.prefixes());
+        let prefixes = PrefixNamespaceMap::new(parser.prefixes());
 
-        Ok(Brick { graph })
+        Ok(Brick { graph, prefixes })
     }
 
-    pub fn sub_class_of(&self, class: &str) -> Result<Vec<String>> {
-        let class = get_ns("brick")?.get(class)?;
+    pub fn sub_class_of(&self, curie: &Curie) -> Result<Vec<Curie>> {
+        let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
 
         self.graph
             .triples_matching(Any, [&rdfs::subClassOf], [&class])
-            .map(|triple| triple.map(|tr| without_ns(tr.s())).map_err(Into::into))
+            .flat_map(|triple| triple.map(|tr| Curie::from_term(tr.s(), &self.prefixes)))
             .collect()
     }
 
-    pub fn super_class_of(&self, class: &str) -> Result<Vec<String>> {
-        let class = get_ns("brick")?.get(class)?;
+    pub fn super_class_of(&self, curie: &Curie) -> Result<Vec<Curie>> {
+        let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
 
         self.graph
             .triples_matching([&class], [&rdfs::subClassOf], Any)
-            .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
+            .flat_map(|triple| triple.map(|tr| Curie::from_term(tr.o(), &self.prefixes)))
             .collect()
     }
 
-    pub fn class_tags(&self, class: &str) -> Result<Vec<String>> {
-        let class = get_ns("brick")?.get(class)?;
+    pub fn class_tags(&self, curie: &Curie) -> Result<Vec<String>> {
+        let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
 
         self.graph
-            .triples_matching([&class], [&get_ns("brick")?.get("hasAssociatedTag")?], Any)
-            .map(|triple| triple.map(|tr| without_ns(tr.o())).map_err(Into::into))
+            .triples_matching(
+                [&class],
+                [&self.get_ns("brick")?.get("hasAssociatedTag")?],
+                Any,
+            )
+            .flat_map(|triple| triple.map(|tr| without_prefix(tr.o())))
             .collect()
     }
 
-    pub fn class_properties(&self, class_name: &str) -> Result<Vec<BrickProperty>> {
-        let class = get_ns("brick")?.get(class_name)?;
-        let prop = get_ns("shacl")?.get("property")?;
+    pub fn class_properties(&self, curie: &Curie) -> Result<Vec<BrickProperty>> {
+        let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
+        let prop = self.get_ns("sh")?.get("property")?;
 
         let mut props = Vec::<BrickProperty>::new();
 
@@ -120,14 +112,13 @@ impl Brick {
                 let val = triple.p().iri().ok_or_else(|| anyhow!("Expecting IRI"))?;
                 let base = val.as_base();
                 let fragment = base.fragment().ok_or_else(|| anyhow!("Missing fragment"))?;
-                let path = base.path().split('/').last().unwrap_or_default();
 
                 if fragment == "message" {
                     prop.definition = triple.o().lexical_form().unwrap().to_string();
                 } else if fragment == "class" {
-                    prop.class = without_ns(triple.o());
+                    prop.class = Curie::from_term(triple.o(), &self.prefixes)?;
                 } else if fragment == "path" {
-                    prop.path = without_ns(triple.o());
+                    prop.path = without_prefix(triple.o())?;
                 } else if fragment == "not" {
                     prop.logical_constraints
                         .push(self.get_not_constraint(triple.o().clone())?);
@@ -147,8 +138,8 @@ impl Brick {
         Ok(())
     }
 
-    pub fn class_desc(&self, class_name: &str) -> Result<BrickClass> {
-        let class = get_ns("brick")?.get(class_name)?;
+    pub fn class_desc(&self, curie: &Curie) -> Result<BrickEntity> {
+        let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
 
         let label = self
             .graph
@@ -166,7 +157,7 @@ impl Brick {
 
         let definition = self
             .graph
-            .triples_matching([&class], [&get_ns("skos")?.get("definition")?], Any)
+            .triples_matching([&class], [&self.get_ns("skos")?.get("definition")?], Any)
             .map(|triple| {
                 triple
                     .map(|tr| {
@@ -184,13 +175,14 @@ impl Brick {
             .map(|triple| triple.map(|tr| only_prefix(tr.o())).map_err(Into::into))
             .collect::<Result<Vec<String>>>()?;
 
-        let super_classes = self.super_class_of(class_name)?;
-        let tags = self.class_tags(class_name)?;
+        let super_classes = self.super_class_of(curie)?;
+        let tags = self.class_tags(curie)?;
 
-        let properties = self.class_properties(class_name)?;
+        let properties = self.class_properties(curie)?;
 
-        Ok(BrickClass {
-            name: class_name.to_string(),
+        Ok(BrickEntity {
+            name: curie.local_name.to_string(),
+            namespace: curie.prefix.to_string(),
             label,
             definition,
             types,
@@ -254,11 +246,20 @@ impl Brick {
         }
         Ok(props)
     }
+
+    fn get_ns(&self, prefix: &str) -> Result<&Namespace<String>> {
+        self.prefixes
+            .get_ns(prefix)
+            .ok_or_else(|| anyhow!("Missing prefix {}", prefix))
+    }
 }
 
-fn without_ns(term: &SimpleTerm) -> String {
-    let val = term.iri().unwrap();
-    val[val.rfind('#').map(|v| v + 1).unwrap_or_default()..].to_string()
+fn without_prefix(term: &SimpleTerm) -> Result<String> {
+    let val = term.iri().ok_or_else(|| anyhow!("Expecting IRI"))?;
+    let base = val.as_base();
+    let fragment = base.fragment().ok_or_else(|| anyhow!("Missing fragment"))?;
+
+    Ok(fragment.to_string())
 }
 
 fn only_prefix(term: &SimpleTerm) -> String {
@@ -273,7 +274,10 @@ fn only_prefix(term: &SimpleTerm) -> String {
 #[cfg(test)]
 mod test {
 
-    use crate::brick::{Brick, LogicalConstraint};
+    use crate::{
+        brick::{Brick, LogicalConstraint},
+        curie::Curie,
+    };
     use std::io::prelude::*;
 
     fn ensure_brick() -> Brick {
@@ -290,9 +294,9 @@ mod test {
         let brick = ensure_brick();
 
         assert!(brick
-            .sub_class_of("Point")
+            .sub_class_of(&"brick:Point".try_into().unwrap())
             .unwrap()
-            .contains(&"Sensor".to_string()));
+            .contains(&Curie::try_from("brick:Sensor").unwrap()));
     }
 
     #[test]
@@ -300,19 +304,19 @@ mod test {
         let brick = ensure_brick();
 
         assert!(brick
-            .super_class_of("Sensor")
+            .super_class_of(&"brick:Sensor".try_into().unwrap())
             .unwrap()
-            .contains(&"Point".to_string()));
+            .contains(&"brick:Point".try_into().unwrap()));
 
         assert!(brick
-            .super_class_of("Capacity_Sensor")
+            .super_class_of(&"brick:Capacity_Sensor".try_into().unwrap())
             .unwrap()
-            .contains(&"Sensor".to_string()));
+            .contains(&"brick:Sensor".try_into().unwrap()));
 
         assert!(brick
-            .super_class_of("Point")
+            .super_class_of(&"brick:Point".try_into().unwrap())
             .unwrap()
-            .contains(&"Entity".to_string()));
+            .contains(&"brick:Entity".try_into().unwrap()));
     }
 
     #[test]
@@ -320,7 +324,7 @@ mod test {
         let brick = ensure_brick();
 
         assert!(brick
-            .class_tags("Setpoint")
+            .class_tags(&Curie::new("brick", "Setpoint"))
             .unwrap()
             .contains(&"Point".to_string()));
     }
@@ -329,7 +333,7 @@ mod test {
     fn test_class_desc() {
         let brick = ensure_brick();
 
-        let desc = brick.class_desc("Setpoint").unwrap();
+        let desc = brick.class_desc(&Curie::new("brick", "Setpoint")).unwrap();
 
         assert_eq!(desc.name, "Setpoint");
         assert_eq!(desc.tags, ["Point", "Setpoint"]);
@@ -341,7 +345,7 @@ mod test {
             desc.types,
             ["shacl#NodeShape".into(), "owl#Class".to_string()]
         );
-        assert_eq!(desc.super_classes, vec!["Point".to_string()]);
+        assert_eq!(desc.super_classes, vec!["brick:Point".try_into().unwrap()]);
         assert_eq!(desc.tags, vec!["Point".to_string(), "Setpoint".to_string()]);
     }
 
@@ -349,23 +353,27 @@ mod test {
     fn test_class_props() {
         let brick = ensure_brick();
 
-        let props = brick.class_properties("Location").unwrap();
+        let props = brick
+            .class_properties(&"brick:Location".try_into().unwrap())
+            .unwrap();
         assert!(!props.is_empty());
 
         assert!(props
             .iter()
-            .any(|p| p.path == "hasPoint" && p.class == "Point"));
+            .any(|p| p.path == "hasPoint" && p.class == Curie::new("brick", "Point")));
 
         assert!(props.iter().any(|p| p.path == "isPartOf"
             && p.logical_constraints.iter().any(
-                |prop| matches!(prop, LogicalConstraint::Or(el) if el[0].class == "Location")
+                |prop| matches!(prop, LogicalConstraint::Or(el) if el[0].class == Curie::new("brick","Location"))
             )));
 
-        let props = brick.class_properties("Site").unwrap();
+        let props = brick
+            .class_properties(&Curie::try_from("brick:Site").unwrap())
+            .unwrap();
         assert!(!props.is_empty());
 
         assert!(props.iter().any(|p| p.path == "hasPart"
             && !p.logical_constraints.is_empty()
-            && matches!(&p.logical_constraints[0], LogicalConstraint::Or(el) if el[0].class == "Building")));
+            && matches!(&p.logical_constraints[0], LogicalConstraint::Or(el) if el[0].class == Curie::new("brick","Building"))));
     }
 }
