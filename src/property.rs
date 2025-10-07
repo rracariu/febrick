@@ -44,7 +44,8 @@ pub struct BrickProperty {
     pub max_exclusive: Option<f64>,
 
     pub pattern: Option<String>,
-    pub datatype: Option<String>,
+    pub datatype: Option<Curie>,
+    pub node_kind: Option<Curie>,
 
     pub constraints: Vec<PropertyPairConstraint>,
     pub logical_constraints: Vec<LogicalConstraint>,

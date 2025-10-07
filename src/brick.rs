@@ -105,7 +105,10 @@ impl Brick {
 
             if triple.s().bnode_id().is_some_and(|val| **val != cur_prop) {
                 props.push(BrickProperty::default());
-                cur_prop = prop_term.bnode_id().unwrap().to_string();
+                cur_prop = prop_term
+                    .bnode_id()
+                    .ok_or_else(|| anyhow!("Expecting Blank Node"))?
+                    .to_string();
             }
 
             if let Some(prop) = props.last_mut() {
@@ -114,9 +117,23 @@ impl Brick {
                 let fragment = base.fragment().ok_or_else(|| anyhow!("Missing fragment"))?;
 
                 if fragment == "message" {
-                    prop.definition = triple.o().lexical_form().unwrap().to_string();
+                    prop.definition = triple
+                        .o()
+                        .lexical_form()
+                        .ok_or_else(|| anyhow!("Expecting literal"))?
+                        .to_string();
                 } else if fragment == "class" {
                     prop.class = Curie::from_term(triple.o(), &self.prefixes)?;
+                } else if fragment == "datatype" {
+                    let iri = triple.o().iri().ok_or_else(|| anyhow!("Expecting IRI"))?;
+                    let curie = Curie::from_iri(iri, &self.prefixes)?;
+
+                    prop.datatype = Some(curie);
+                } else if fragment == "nodeKind" {
+                    let iri = triple.o().iri().ok_or_else(|| anyhow!("Expecting IRI"))?;
+                    let curie = Curie::from_iri(iri, &self.prefixes)?;
+
+                    prop.node_kind = Some(curie);
                 } else if fragment == "path" {
                     prop.path = without_prefix(triple.o())?;
                 } else if fragment == "not" {

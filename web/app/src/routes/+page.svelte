@@ -10,9 +10,9 @@
 
 	import { onMount } from 'svelte';
 
-	import Badge from '$lib/components/ui/badge/badge.svelte';
-	import { Brick, type BrickProperty, type Curie } from 'febrick';
+	import { Brick, type Curie } from 'febrick';
 	import brickTtl from '../../../../Brick.ttl?raw';
+	import Property from '$lib/components/Property.svelte';
 
 	const rootClass = { prefix: 'brick', localName: 'Entity' } as Curie;
 
@@ -21,7 +21,7 @@
 	let search: string = $state('');
 	let loadedClassNames: Curie[] = $state([]);
 
-	const filteredClassNames = $derived.by(() =>
+	const filteredCuries = $derived.by(() =>
 		search.length
 			? loadedClassNames.filter((entity) =>
 					entity.localName.toLowerCase().startsWith(search.toLowerCase())
@@ -37,7 +37,12 @@
 	});
 
 	function subClassOf(uri: Curie): void {
-		loadedClassNames = brick?.subClassOf(uri) ?? [];
+		if (!brick) {
+			return;
+		}
+
+		const subClasses = brick.subClassOf(uri);
+		loadedClassNames = subClasses.length ? subClasses : [uri];
 	}
 
 	function navigateToLevel(index: number): void {
@@ -49,21 +54,14 @@
 
 	function navigateToClass(uri: Curie): void {
 		search = '';
+
+		if (path.find((p) => p.prefix === uri.prefix && p.localName === uri.localName)) {
+			// already in path
+			return;
+		}
+
 		path = [...path, uri];
 		subClassOf(uri);
-	}
-
-	function constraints(prop: BrickProperty): Curie[] {
-		if (prop.logicalConstraints.length) {
-			const constraint = prop.logicalConstraints[0];
-			if (!('Or' in constraint)) {
-				return [];
-			}
-
-			return constraint.Or.map((prop) => prop.class);
-		} else {
-			return [];
-		}
 	}
 </script>
 
@@ -98,17 +96,17 @@
 		<Card.Content>
 			<div class="grid grid-cols-4">
 				{#if brick}
-					{#each filteredClassNames as className}
-						{@const desc = brick?.classDescription(className)}
+					{#each filteredCuries as curie}
+						{@const entity = brick?.classDescription(curie)}
 						<Card.Root class="m-1"
 							><Card.Header>
 								<Card.Title>
 									<div class="flex flex-row items-center justify-between">
-										{className.prefix}:{className.localName}
+										{curie.prefix}:{curie.localName}
 										<Button
 											variant="link"
 											onclick={() => {
-												navigateToClass(className);
+												navigateToClass(curie);
 											}}
 											><ArrowUpRight />
 										</Button>
@@ -116,7 +114,7 @@
 								</Card.Title>
 
 								<Card.Description class="overflow-hidden truncate"
-									><span title={desc.definition}>{desc.definition}</span></Card.Description
+									><span title={entity.definition}>{entity.definition}</span></Card.Description
 								>
 							</Card.Header>
 							<Card.Content>
@@ -128,39 +126,13 @@
 										</Table.Row>
 									</Table.Header>
 									<Table.Body>
-										{#if desc.properties.length === 0}
+										{#if entity.properties.length === 0}
 											<Table.Row>
 												<Table.Cell class="text-center">No properties</Table.Cell>
 											</Table.Row>
 										{:else}
-											{#each desc.properties as prop}
-												<Table.Row>
-													<Table.Cell
-														class="justify-self-end border-b-2 border-b-slate-50 align-text-top"
-													>
-														{prop.path}
-													</Table.Cell>
-													<Table.Cell
-														class="justify-self-start border-b-2 border-b-slate-50 align-text-top"
-													>
-														{#if prop.class.localName}
-															<Button variant="link" onclick={() => navigateToClass(prop.class)}
-																>{prop.class.prefix}:{prop.class.localName}</Button
-															>
-														{:else}
-															{#each constraints(prop) as c, i}
-																<div class="m-1 flex content-center items-center">
-																	{#if i === 0}
-																		<Badge variant="outline" class="mr-1">One of:</Badge>
-																	{/if}
-																	<Button variant="link" onclick={() => navigateToClass(c)}
-																		>{c.prefix}:{c.localName}</Button
-																	>
-																</div>
-															{/each}
-														{/if}
-													</Table.Cell>
-												</Table.Row>
+											{#each entity.properties as prop}
+												<Property property={prop} navigate={(curie) => navigateToClass(curie)} />
 											{/each}
 										{/if}
 									</Table.Body>

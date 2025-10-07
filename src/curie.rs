@@ -40,12 +40,20 @@ impl Curie {
     pub fn from_iri(iri: impl AsIriRef, prefixes: &PrefixNamespaceMap) -> Result<Self> {
         let iri = iri.as_iri_ref();
         let base = iri.as_base();
+        let fragment = base.fragment();
 
-        let local_name: String = base
-            .fragment()
-            .and_then(|frag| if frag.is_empty() { None } else { Some(frag) })
-            .ok_or_else(|| anyhow!("Missing IRI fragment"))?
-            .into();
+        let local_name: String = if let Some(fragment) = fragment {
+            if fragment.is_empty() {
+                None
+            } else {
+                Some(fragment)
+            }
+        } else {
+            let path = base.path();
+            Some(&path[path.rfind('/').map_or(0, |i| i + 1)..])
+        }
+        .ok_or_else(|| anyhow!("Can't determine local name from, {iri}"))?
+        .into();
 
         let prefix = &base[..base.len() - local_name.len()];
 
@@ -126,6 +134,18 @@ mod tests {
         let curie = Curie::from_iri(Iri::new_unchecked(iri), &prefixes).unwrap();
         assert_eq!(curie.prefix, "brick");
         assert_eq!(curie.local_name, "Location");
+
+        let prefixes = PrefixNamespaceMap::new(
+            &[("sosa".to_string(), "http://www.w3.org/ns/sosa/".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+
+        let iri = "http://www.w3.org/ns/sosa/FeatureOfInterest";
+        let curie = Curie::from_iri(Iri::new_unchecked(iri), &prefixes).unwrap();
+        assert_eq!(curie.prefix, "sosa");
+        assert_eq!(curie.local_name, "FeatureOfInterest");
     }
 
     #[test]
