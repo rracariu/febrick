@@ -44,7 +44,7 @@ impl Brick {
         Ok(Brick { graph, prefixes })
     }
 
-    pub fn sub_class_of(&self, curie: &Curie) -> Result<Vec<Curie>> {
+    pub fn sub_classes_of(&self, curie: &Curie) -> Result<Vec<Curie>> {
         let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
 
         self.graph
@@ -53,7 +53,7 @@ impl Brick {
             .collect()
     }
 
-    pub fn super_class_of(&self, curie: &Curie) -> Result<Vec<Curie>> {
+    pub fn super_classes_of(&self, curie: &Curie) -> Result<Vec<Curie>> {
         let class = self.get_ns(&curie.prefix)?.get(&curie.local_name)?;
 
         self.graph
@@ -192,7 +192,7 @@ impl Brick {
             .map(|triple| triple.map(|tr| only_prefix(tr.o())).map_err(Into::into))
             .collect::<Result<Vec<String>>>()?;
 
-        let super_classes = self.super_class_of(curie)?;
+        let super_classes = self.super_classes_of(curie)?;
         let tags = self.class_tags(curie)?;
 
         let properties = self.class_properties(curie)?;
@@ -311,7 +311,7 @@ mod test {
         let brick = ensure_brick();
 
         assert!(brick
-            .sub_class_of(&"brick:Point".try_into().unwrap())
+            .sub_classes_of(&"brick:Point".try_into().unwrap())
             .unwrap()
             .contains(&Curie::try_from("brick:Sensor").unwrap()));
     }
@@ -321,17 +321,17 @@ mod test {
         let brick = ensure_brick();
 
         assert!(brick
-            .super_class_of(&"brick:Sensor".try_into().unwrap())
+            .super_classes_of(&"brick:Sensor".try_into().unwrap())
             .unwrap()
             .contains(&"brick:Point".try_into().unwrap()));
 
         assert!(brick
-            .super_class_of(&"brick:Capacity_Sensor".try_into().unwrap())
+            .super_classes_of(&"brick:Capacity_Sensor".try_into().unwrap())
             .unwrap()
             .contains(&"brick:Sensor".try_into().unwrap()));
 
         assert!(brick
-            .super_class_of(&"brick:Point".try_into().unwrap())
+            .super_classes_of(&"brick:Point".try_into().unwrap())
             .unwrap()
             .contains(&"brick:Entity".try_into().unwrap()));
     }

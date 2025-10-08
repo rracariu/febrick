@@ -37,7 +37,7 @@ impl Brick {
         let curie = from_value::<Curie>(curie).map_err(|err| err.to_string())?;
 
         self.brick
-            .sub_class_of(&curie)
+            .sub_classes_of(&curie)
             .map_err(|err| err.to_string())
             .and_then(|vec| {
                 vec.into_iter()
@@ -56,7 +56,7 @@ impl Brick {
         let curie = from_value(curie).map_err(|err| err.to_string())?;
 
         self.brick
-            .super_class_of(&curie)
+            .super_classes_of(&curie)
             .map_err(|err| err.to_string())
             .and_then(|vec| {
                 vec.into_iter()

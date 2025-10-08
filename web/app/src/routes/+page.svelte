@@ -10,7 +10,7 @@
 
 	import { onMount } from 'svelte';
 
-	import { Brick, type Curie } from 'febrick';
+	import type { Brick, Curie } from 'febrick';
 	import brickTtl from '../../../../Brick.ttl?raw';
 	import Property from '$lib/components/Property.svelte';
 
@@ -29,7 +29,8 @@
 			: loadedClassNames
 	);
 
-	onMount(() => {
+	onMount(async () => {
+		const { Brick } = await import('febrick');
 		brick = new Brick(brickTtl);
 		subClassOf(rootClass);
 
